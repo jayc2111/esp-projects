@@ -1,32 +1,16 @@
-
 /*
- based on "Stepper Motor Control" by Tom Igoe
-
  This little fellow waits for commands on the USB line
  and turns a NEMA17 accordingly.
  
  "ident"        - identify yourself
- "start"        - Todo: spin continously
- "stop"         - Todo: stop spinning
+ "start"        - spin continously
+ "stop"         - stop spinning
  "turn <angle>" - turn stepper by angle
  
  */
 
-#include <Stepper.h>
-
-#define MAX_ANGLE 360
-
-/* PIN connectors */
-const unsigned char GPIO_YEL = 5u;
-const unsigned char GPIO_GRE = 4u;
-const unsigned char GPIO_WHI = 12u;
-const unsigned char GPIO_BLU = 13u;
-
-// change this to fit the number of steps per revolution
-const int stepsPerRevolution = 200;
-
-// initialize the stepper library on pins 8 through 11:
-Stepper myStepper(stepsPerRevolution, GPIO_BLU, GPIO_WHI, GPIO_GRE, GPIO_YEL);
+#define LED_BUILTIN  0
+#define PWM_PIN     12 /*  GPIO12 is D6 on NodeMCU*/
 
 /* commands */
 const char tag_TURN[]  = "turn";
@@ -37,45 +21,36 @@ const char tag_IDENT[] = "ident";
 /* command string max lenght */
 const uint8_t L_MAX_CMD = 255u;
 
-
 char serialInBuffer[L_MAX_CMD];
-uint8_t idx;
+uint8_t serialInBuffer_idx;
+
 
 void setup() {
-  //pinMode(LED_BUILTIN, OUTPUT);     // Initialize the LED_BUILTIN pin as an output
-  
-  memset((void*)serialInBuffer, 0x00, sizeof(serialInBuffer));
-  idx = 0;
-  
-  // set the speed at 60 rpm
-  myStepper.setSpeed(60);
+  pinMode(LED_BUILTIN, OUTPUT);
 
-  // initialize the serial port:
+  memset((void*)serialInBuffer, 0x00, sizeof(serialInBuffer));
+  serialInBuffer_idx = 0;
+
+  pinMode(PWM_PIN, OUTPUT);
+  
+  // initialize the serial port
   Serial.begin(115200);  
   Serial.write("\nReady to Run\n");
-
 }
 
 
-void setStepperIdle() {
-  digitalWrite(GPIO_YEL, LOW);
-  digitalWrite(GPIO_GRE, LOW);
-  digitalWrite(GPIO_WHI, LOW);
-  digitalWrite(GPIO_BLU, LOW);
-}
-
-
-void turnPlate(int16_t angle)
+void turnPlate(uint16_t pos)
 {
-  myStepper.step(angle);
-  setStepperIdle();
+   digitalWrite(PWM_PIN, HIGH);
+   delay(pos*10);
+   digitalWrite(PWM_PIN, LOW);
 }
 
 
 void decodeCmd (const char* cmd)
 {
   /*
-    turn [-MAX_ANGLE, MAX_ANGLE]
+    turn [-180, 180]
     start
     stop
    */
@@ -92,36 +67,29 @@ void decodeCmd (const char* cmd)
       if ( 0 == strncmp(substr, tag_TURN, L_MAX_CMD) ) {
         substr = strtok(nullptr, "\n");
   
-        if (substr){
-                    
-          angle = atof(substr);
-          if ( (-MAX_ANGLE > angle) || (MAX_ANGLE < angle) ) {
-            Serial.write("invalid angle: "); 
-          }
-          else {            
-            // convert angle into motorsteps
-            int steps = int(angle/1.8);
-            turnPlate(steps);
-            Serial.write("turning: ");
-          }
-          Serial.print(angle, DEC);
-          Serial.write(" --\n");
+        if (substr)
+          angle = atoi(substr);
+  
+        if ( (-180 > angle) || (180 < angle) ) {
+          Serial.write("invalid angle: "); 
         }
+        else {
+          turnPlate(angle);
+          Serial.write("turning: ");
+        }
+        Serial.print(angle, DEC);
+        Serial.write(" --\n");
   
       }
       /* START command */
       else if ( 0 == strncmp(substr, tag_START, L_MAX_CMD) ) {
-        
+        digitalWrite(PWM_PIN, HIGH);
         Serial.write("start spinning\n");
-        
-        // ToDo
       }
       /* STOP command */
       else if ( 0 == strncmp(substr, tag_STOP, L_MAX_CMD) ) {
-        
+        digitalWrite(PWM_PIN, LOW);
         Serial.write("stopping\n");
-        
-        // ToDo
       }
       /* IDENT command */
       else if ( 0 == strncmp(substr, tag_IDENT, L_MAX_CMD) ) {
@@ -134,36 +102,32 @@ void decodeCmd (const char* cmd)
         Serial.write(cmd);
         Serial.write("\n");
       }
-    }
-
+    } /* substring not empty */
   }
 }
 
 
 void loop() {
-  // init 
-  //digitalWrite(LED_BUILTIN, LOW);
-  //delay(500);
-  //digitalWrite(LED_BUILTIN, HIGH);
   
-  // better for serial interface reading
+  digitalWrite(LED_BUILTIN, LOW);
   delay(500);
 
 
   /* get command from serial line */
   while(Serial.available()){
-    serialInBuffer[idx] = Serial.read();
-    idx++;
+    serialInBuffer[serialInBuffer_idx] = Serial.read();
+    serialInBuffer_idx++;
   } /* while */
-
+  
   // Is there a new command?
-  if (3 < idx) 
+  if (3 < serialInBuffer_idx) 
   {
     //Serial.write(serialInBuffer);
     decodeCmd(serialInBuffer);
     
     memset((void*)serialInBuffer, 0x00, sizeof(serialInBuffer));
-    idx = 0;
+    serialInBuffer_idx = 0;
   }
+  
   
 }
